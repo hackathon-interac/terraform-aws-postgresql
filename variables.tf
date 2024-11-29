@@ -823,19 +823,3 @@ variable "sql_files" {
   type        = list(string)
   default     = []
 }
-
-variable "master_username" {
-  description = "Master username for the Aurora cluster"
-  type        = string
-}
-
-variable "master_password" {
-  description = "Master password for the Aurora cluster"
-  type        = string
-  sensitive   = true
-}
-
-variable "database_name" {
-  description = "Name of the default database"
-  type        = string
-}
