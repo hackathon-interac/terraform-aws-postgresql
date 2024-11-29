@@ -817,3 +817,25 @@ variable "master_user_password_rotation_schedule_expression" {
   type        = string
   default     = null
 }
+
+variable "sql_files" {
+  description = "List of paths to SQL files for schema and table creation"
+  type        = list(string)
+  default     = []
+}
+
+variable "master_username" {
+  description = "Master username for the Aurora cluster"
+  type        = string
+}
+
+variable "master_password" {
+  description = "Master password for the Aurora cluster"
+  type        = string
+  sensitive   = true
+}
+
+variable "database_name" {
+  description = "Name of the default database"
+  type        = string
+}

@@ -1,5 +1,12 @@
 data "aws_partition" "current" {}
 
+data "local_file" "sql_files" {
+  for_each = { for idx, file in var.sql_files : idx => file }
+
+  filename = each.value
+}
+
+
 locals {
   create = var.create && var.putin_khuylo
 
@@ -161,6 +168,32 @@ resource "aws_rds_cluster" "this" {
 }
 
 ################################################################################
+# Initialize DB
+################################################################################
+
+resource "null_resource" "init_db" {
+  triggers = {
+    cluster_writer_endpoint = aws_rds_cluster.this[0].endpoint
+    sql_files               = join(",", [for file in data.local_file.sql_files : file.content])
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      psql --host=${aws_rds_cluster.this[0].endpoint} \
+           --port=${local.port} \
+           --username=${var.master_username} \
+           --dbname=${var.database_name} \
+           -c "$(join("\n", [for file in data.local_file.sql_files : file.content]))"
+    EOT
+    environment = {
+      PGPASSWORD = var.master_password
+    }
+  }
+
+  depends_on = [aws_rds_cluster.this]
+}
+
+################################################################################
 # Cluster Instance(s)
 ################################################################################
 
@@ -274,51 +307,6 @@ resource "aws_iam_role_policy_attachment" "rds_enhanced_monitoring" {
   policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
 }
 
-################################################################################
-# Autoscaling
-################################################################################
-
-resource "aws_appautoscaling_target" "this" {
-  count = local.create && var.autoscaling_enabled && !local.is_serverless ? 1 : 0
-
-  max_capacity       = var.autoscaling_max_capacity
-  min_capacity       = var.autoscaling_min_capacity
-  resource_id        = "cluster:${aws_rds_cluster.this[0].cluster_identifier}"
-  scalable_dimension = "rds:cluster:ReadReplicaCount"
-  service_namespace  = "rds"
-
-  tags = var.tags
-
-  lifecycle {
-    ignore_changes = [
-      tags_all,
-    ]
-  }
-}
-
-resource "aws_appautoscaling_policy" "this" {
-  count = local.create && var.autoscaling_enabled && !local.is_serverless ? 1 : 0
-
-  name               = var.autoscaling_policy_name
-  policy_type        = "TargetTrackingScaling"
-  resource_id        = "cluster:${aws_rds_cluster.this[0].cluster_identifier}"
-  scalable_dimension = "rds:cluster:ReadReplicaCount"
-  service_namespace  = "rds"
-
-  target_tracking_scaling_policy_configuration {
-    predefined_metric_specification {
-      predefined_metric_type = var.predefined_metric_type
-    }
-
-    scale_in_cooldown  = var.autoscaling_scale_in_cooldown
-    scale_out_cooldown = var.autoscaling_scale_out_cooldown
-    target_value       = var.predefined_metric_type == "RDSReaderAverageCPUUtilization" ? var.autoscaling_target_cpu : var.autoscaling_target_connections
-  }
-
-  depends_on = [
-    aws_appautoscaling_target.this
-  ]
-}
 
 ################################################################################
 # Security Group
